@@ -1,6 +1,7 @@
 #include <torch/csrc/jit/passes/alias_analysis.h>
 
 #include <torch/csrc/jit/script/error_report.h>
+#include <torch/csrc/jit/operator.h>
 #include <torch/csrc/utils/memory.h>
 
 namespace torch {
@@ -346,6 +347,24 @@ void AliasDb::analyze(Node* node) {
   }
 }
 
+// Returns true if analysis was run using
+// the registered analyzer.
+bool AliasDb::tryRegisteredAnalysis(Node* node) {
+  const Operator& op = getOperatorFor(node);
+  auto analysis = op.options().aliasAnalysis();
+  switch (analysis) {
+    case AliasAnalysisKind::CREATOR:
+      analyzeCreator(node);
+      return true;
+    case AliasAnalysisKind::EXTRACTOR:
+      analyzeExtractor(node);
+      return true;
+    case AliasAnalysisKind::DEFAULT:
+      return false;
+  }
+  return false;
+}
+
 // The basic strategy is:
 //   1. Retrieve alias information for every input.
 //   2. Use the node's schema's alias annotations to propgagate alias/write
@@ -409,6 +428,9 @@ void AliasDb::analyzeImpl(Node* node) {
       // These ops do nothing
       return;
     default:
+      if (tryRegisteredAnalysis(node)) {
+        return;
+      }
       AT_ASSERT(!aliasAnalysisHasSpecialCaseFor(node->kind()));
   }
 
