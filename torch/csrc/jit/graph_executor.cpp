@@ -322,16 +322,26 @@ struct GraphExecutorImpl {
     return copy;
   }
 
-  inline bool hasMutableOperators(Block* block) {
-    for (auto n : block->nodes()) {
-      if (n->kind().is_aten() && n->schema().is_mutable())
-        return true;
-      for (auto b : n->blocks()) {
-        if (hasMutableOperators(b))
-          return true;
-      }
+  static size_t countFlatInputs(const TypePtr& ptr) {
+    if (auto optional_type = ptr->cast<OptionalType>()) {
+      return countFlatInputs(optional_type->getElementType());
     }
-    return false;
+    if (auto tuple_type = ptr->cast<TupleType>()) {
+      size_t total = 0;
+      for (auto& elem : tuple_type->elements()) {
+        total += countFlatInputs(elem);
+      }
+      return total;
+    }
+    return 1;
+  }
+
+  static size_t countFlatInputs(const std::shared_ptr<Graph>& graph) {
+    size_t total = 0;
+    for (Value* input : graph->inputs()) {
+      total += countFlatInputs(input->type());
+    }
+    return total;
   }
 
   GraphExecutorImpl(std::shared_ptr<Graph> graph, bool optimize)
